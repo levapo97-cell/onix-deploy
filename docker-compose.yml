@@ -1,0 +1,75 @@
+# OnixGuard — docker-compose de DESARROLLO.
+# Orquesta: NATS/JetStream + servicio core (onix-ingestor, Fase 0) + frontend OnixGuard.
+# PostgreSQL es EXTERNO (lo montó el jefe en el VPS): NO va aquí, entra por DATABASE_URL.
+# onix-hook tampoco va aquí: se compila e instala en tu PC.
+#
+# Supone los repos clonados como HERMANOS (polyrepo):
+#   Onix/
+#     onix-deploy/   (este repo)
+#     onix-ingestor/ onix-db/ OnixGuard/ ...
+#
+# Uso: `make dev` (o `docker compose up --build`). Migraciones: `make migrate` (perfil aparte).
+
+name: onixguard
+
+services:
+  # ─────────────── Bus de eventos ───────────────
+  nats:
+    image: nats:2.10-alpine
+    command: ["-c", "/etc/nats/nats.conf"]
+    ports:
+      - "4222:4222"   # clientes
+      - "8222:8222"   # monitoreo/health HTTP
+    volumes:
+      - ./nats/nats.conf:/etc/nats/nats.conf:ro
+      - nats_data:/data
+    healthcheck:
+      # endpoint de salud de JetStream expuesto en el puerto de monitoreo
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ─────────────── Servicio core (Fase 0) ───────────────
+  ingestor:
+    build:
+      context: ../onix-ingestor
+      args:
+        VERSION: dev
+    environment:
+      PORT: "8081"
+      NATS_URL: "nats://nats:4222"
+      DATABASE_URL: "${DATABASE_URL:-}"
+    ports:
+      - "8081:8081"
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ─────────────── Frontend ───────────────
+  frontend:
+    build:
+      context: ../OnixGuard
+    ports:
+      - "3000:80"
+    depends_on:
+      - ingestor
+    restart: unless-stopped
+
+  # ─────────────── Migraciones (perfil aparte, no bloquea el smoke test) ───────────────
+  # Corre con: `make migrate` → docker compose --profile migrate run --rm migrate
+  migrate:
+    image: migrate/migrate:v4.17.1
+    profiles: ["migrate"]
+    volumes:
+      - ../onix-db/migrations:/migrations:ro
+    # host.docker.internal permite alcanzar un Postgres del host desde el contenedor (mac/win).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      ["-path=/migrations", "-database", "${DATABASE_URL}", "up"]
+
+volumes:
+  nats_data:

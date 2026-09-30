@@ -1,0 +1,84 @@
+# Pipeline CI REUTILIZABLE de OnixGuard (una sola, para todo el polyrepo).
+# Cada repo de servicio la invoca con `uses: levapo97-cell/onix-deploy/.github/workflows/reusable-ci.yml@main`
+# y le pasa `lang`. Se arregla el pipeline UNA vez, no N veces.
+name: reusable-ci
+
+on:
+  workflow_call:
+    inputs:
+      lang:
+        description: "go | rust | node | contracts"
+        required: true
+        type: string
+      working-directory:
+        description: "Directorio donde corre el build (por defecto la raíz)."
+        required: false
+        type: string
+        default: "."
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ─────────── Go (ingestor, recorder, orchestrator, gateway, hook) ───────────
+      - name: Setup Go
+        if: inputs.lang == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Go lint + test + build
+        if: inputs.lang == 'go'
+        run: |
+          go vet ./...
+          go build ./...
+          go test ./...
+
+      # ─────────── Rust (guard) ───────────
+      - name: Setup Rust
+        if: inputs.lang == 'rust'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Rust fmt + clippy + test
+        if: inputs.lang == 'rust'
+        run: |
+          cargo fmt --all --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+
+      # ─────────── Node (frontend OnixGuard) ───────────
+      - name: Setup Node
+        if: inputs.lang == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Node lint + build
+        if: inputs.lang == 'node'
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+
+      # ─────────── Contracts (codegen sin drift + tests de contrato) ───────────
+      - name: Setup Node (contracts)
+        if: inputs.lang == 'contracts'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Contract tests + codegen drift
+        if: inputs.lang == 'contracts'
+        run: |
+          bash tests/validate.sh
+          bash codegen/generate.sh
+          if ! git diff --quiet -- go rust; then
+            echo "✗ Los tipos generados están desactualizados. Corre codegen/generate.sh y commitea." >&2
+            git --no-pager diff --stat -- go rust
+            exit 1
+          fi
+          echo "✓ Contratos y codegen al día."
