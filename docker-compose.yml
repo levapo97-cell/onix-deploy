@@ -48,6 +48,23 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ─────────────── Gateway (edge: REST + WebSocket) ───────────────
+  gateway:
+    build:
+      context: ../onix-gateway
+      args:
+        VERSION: dev
+    environment:
+      PORT: "8080"
+      NATS_URL: "nats://nats:4222"
+      DATABASE_URL: "${DATABASE_URL:-}"
+    ports:
+      - "8080:8080"
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
   # ─────────────── Frontend ───────────────
   frontend:
     build:
@@ -55,7 +72,7 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - ingestor
+      - gateway
     restart: unless-stopped
 
   # ─────────────── Migraciones (perfil aparte, no bloquea el smoke test) ───────────────

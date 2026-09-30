@@ -1,0 +1,49 @@
+# Override SOLO para desarrollo/E2E local: añade un PostgreSQL efímero dentro de Docker y
+# reapunta los servicios a él. El compose base sigue fiel al plan (Postgres externo en prod).
+#
+# Uso: `make e2e` (que hace `docker compose -f docker-compose.yml -f docker-compose.localdb.yml ...`).
+# NO usar en producción: en el VPS, Postgres vive fuera de Docker y DATABASE_URL apunta allá.
+
+name: onixguard
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: devtools
+      POSTGRES_PASSWORD: devtools
+      POSTGRES_DB: onixguard
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devtools -d onixguard"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ingestor:
+    environment:
+      DATABASE_URL: "postgres://devtools:devtools@postgres:5432/onixguard?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  gateway:
+    environment:
+      DATABASE_URL: "postgres://devtools:devtools@postgres:5432/onixguard?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  migrate:
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      ["-path=/migrations", "-database",
+       "postgres://devtools:devtools@postgres:5432/onixguard?sslmode=disable", "up"]
+
+volumes:
+  pg_data:

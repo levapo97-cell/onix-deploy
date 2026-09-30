@@ -3,8 +3,10 @@
 .DEFAULT_GOAL := help
 # Detecta compose v2 plugin (`docker compose`) o standalone (`docker-compose`).
 COMPOSE := $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; else echo "docker-compose"; fi)
+# E2E local: compose base + override con Postgres efímero dentro de Docker.
+COMPOSE_E2E := $(COMPOSE) -f docker-compose.yml -f docker-compose.localdb.yml
 
-.PHONY: help dev up down logs ps build migrate migrate-down test-db codegen smoke
+.PHONY: help dev up down logs ps build migrate migrate-down test-db codegen smoke e2e e2e-up e2e-migrate e2e-smoke e2e-down
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -52,3 +54,22 @@ smoke: ## Smoke test de Fase 0: comprueba que /healthz responde
 	  fi; sleep 2; \
 	done; \
 	echo "✗ /healthz no respondió a tiempo"; exit 1
+
+# ─────────────── E2E de Fase 1 (con Postgres efímero en Docker) ───────────────
+e2e: e2e-up e2e-migrate e2e-smoke ## Fase 1 completa en local: levanta todo + migra + verifica
+
+e2e-up: ## Levanta NATS + core + gateway + frontend + Postgres efímero (build, detached)
+	$(COMPOSE_E2E) up --build -d
+
+e2e-migrate: ## Aplica migraciones de onix-db al Postgres efímero
+	$(COMPOSE_E2E) --profile migrate run --rm migrate
+
+e2e-smoke: ## Verifica que core y gateway responden /healthz
+	@echo "Esperando a core y gateway…"; \
+	ok=0; for i in $$(seq 1 30); do \
+	  if curl -fsS http://localhost:8081/healthz >/dev/null 2>&1 && curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then ok=1; break; fi; sleep 2; \
+	done; \
+	if [ $$ok -eq 1 ]; then echo "✓ core y gateway OK"; else echo "✗ no respondieron"; exit 1; fi
+
+e2e-down: ## Baja el stack E2E y borra el volumen de Postgres
+	$(COMPOSE_E2E) --profile migrate down -v
