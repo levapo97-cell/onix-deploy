@@ -30,6 +30,13 @@ services:
       postgres:
         condition: service_healthy
 
+  orchestrator:
+    environment:
+      DATABASE_URL: "postgres://devtools:devtools@postgres:5432/onixguard?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   gateway:
     environment:
       DATABASE_URL: "postgres://devtools:devtools@postgres:5432/onixguard?sslmode=disable"

@@ -78,6 +78,26 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ─────────────── Orchestrator: MCP + pausa/reanuda + 12 etapas ───────────────
+  orchestrator:
+    build:
+      context: ../onix-orchestrator
+      args:
+        VERSION: dev
+    environment:
+      PORT: "8085"       # HTTP de control (gateway → orchestrator) + salud
+      MCP_PORT: "8084"   # servidor MCP (agentes)
+      NATS_URL: "nats://nats:4222"
+      DATABASE_URL: "${DATABASE_URL:-}"
+      REPORT_TIMEOUT_MIN: "15"
+    ports:
+      - "8084:8084"
+      - "8085:8085"
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
   # ─────────────── Gateway (edge: REST + WebSocket) ───────────────
   gateway:
     build:
@@ -88,6 +108,7 @@ services:
       PORT: "8080"
       NATS_URL: "nats://nats:4222"
       DATABASE_URL: "${DATABASE_URL:-}"
+      ORCHESTRATOR_URL: "http://orchestrator:8085"
     ports:
       - "8080:8080"
     depends_on:
