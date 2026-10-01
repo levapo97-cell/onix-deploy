@@ -1,0 +1,82 @@
+# Pipeline CD REUTILIZABLE de OnixGuard (una sola, para todo el polyrepo).
+# Cada repo de servicio la invoca en push a main: construye y publica la imagen a GHCR,
+# despliega en el VPS por SSH, hace health-check y revierte a la imagen anterior si falla.
+#
+# El repo que la invoca debe definir estos secrets (en su config de GitHub):
+#   VPS_HOST, VPS_USER, VPS_SSH_KEY   → acceso al VPS
+#   (GHCR usa GITHUB_TOKEN automático)
+#
+# Ejemplo de caller (.github/workflows/cd.yml en el repo de servicio):
+#   jobs:
+#     cd:
+#       uses: levapo97-cell/onix-deploy/.github/workflows/reusable-cd.yml@main
+#       with: { service: onix-gateway, health_port: "8080", health_path: "/healthz" }
+#       secrets: inherit
+name: reusable-cd
+
+on:
+  workflow_call:
+    inputs:
+      service:     { required: true,  type: string }   # nombre del servicio/imagen
+      health_port: { required: false, type: string, default: "8080" }
+      health_path: { required: false, type: string, default: "/healthz" }
+    secrets:
+      VPS_HOST:    { required: true }
+      VPS_USER:    { required: true }
+      VPS_SSH_KEY: { required: true }
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ inputs.service }}:latest
+            ghcr.io/${{ github.repository_owner }}/${{ inputs.service }}:${{ github.sha }}
+
+      - name: Deploy on VPS (with rollback)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            IMG=ghcr.io/${{ github.repository_owner }}/${{ inputs.service }}
+            SVC=${{ inputs.service }}
+            # guarda la imagen actual para posible rollback
+            PREV=$(docker inspect --format='{{.Image}}' "$SVC" 2>/dev/null || echo "")
+            docker pull "$IMG:${{ github.sha }}"
+            docker tag "$IMG:${{ github.sha }}" "$IMG:current"
+            # recrea el contenedor (onix-deploy en el VPS usa estas imágenes :current)
+            cd /opt/onixguard
+            docker compose up -d --no-deps "$SVC"
+            # health-check
+            ok=0
+            for i in $(seq 1 20); do
+              if docker exec "$SVC" /"$SVC" -healthcheck 2>/dev/null \
+                 || wget -qO- "http://127.0.0.1:${{ inputs.health_port }}${{ inputs.health_path }}" >/dev/null 2>&1; then ok=1; break; fi
+              sleep 3
+            done
+            if [ "$ok" != "1" ]; then
+              echo "health-check falló → rollback"
+              if [ -n "$PREV" ]; then docker tag "$PREV" "$IMG:current"; docker compose up -d --no-deps "$SVC"; fi
+              exit 1
+            fi
+            echo "deploy OK"
