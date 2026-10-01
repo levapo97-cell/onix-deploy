@@ -23,7 +23,7 @@ services:
       timeout: 3s
       retries: 10
 
-  ingestor:
+  recorder:
     environment:
       DATABASE_URL: "postgres://devtools:devtools@postgres:5432/onixguard?sslmode=disable"
     depends_on:
