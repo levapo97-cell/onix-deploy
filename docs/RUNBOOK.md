@@ -6,6 +6,20 @@ Guía operativa del despliegue en el VPS. Para desarrollo local ver el README de
 - **VPS** (tras nginx + Cloudflare, subdominio `onix.devtoolsdk.com`): NATS/JetStream, `onix-ingestor`, `onix-guard`, `onix-recorder`, `onix-orchestrator`, `onix-gateway`, frontend. PostgreSQL **externo al compose** (en el host del VPS).
 - **Tu PC**: `onix-hook` (telemetría) y `onix-agent` (proyectos/repos). Solo conexiones **salientes** a NATS (TLS + token).
 
+## Configurar los secrets en GitHub (lo haces TÚ — nunca me los pases)
+La clave SSH privada **jamás** se comparte ni se pone en un archivo del repo. Con el CLI `gh`:
+```bash
+# una sola vez, a nivel de organización/usuario (o repo por repo con -R <owner>/<repo>):
+gh auth login
+for r in onix-ingestor onix-guard onix-recorder onix-orchestrator onix-gateway OnixGuard; do
+  gh secret set VPS_HOST    -R levapo97-cell/$r -b "IP_O_DOMINIO_DEL_VPS"
+  gh secret set VPS_USER    -R levapo97-cell/$r -b "usuario_deploy"
+  gh secret set VPS_SSH_KEY -R levapo97-cell/$r < ~/.ssh/onix_deploy_key   # la PRIVADA, leída de tu disco
+done
+```
+En el VPS, `/opt/onixguard/.env` tiene: `DATABASE_URL` (password fuerte), `JWT_SECRET`, `PANEL_USER`, `PANEL_PASSWORD_HASH` (bcrypt), `CORS_ORIGIN`.
+Generar el hash bcrypt del panel: `htpasswd -bnBC 12 "" 'TU_PASSWORD' | tr -d ':\n' | sed 's/^$2y/$2a/'` (o cualquier generador bcrypt).
+
 ## Despliegue (CD)
 - Cada repo de servicio tiene `.github/workflows/cd.yml` que invoca `reusable-cd.yml` de este repo: build → push a GHCR → SSH al VPS → `docker compose up -d --no-deps <svc>` → health-check → **rollback** a la imagen previa si falla.
 - Secrets necesarios en cada repo de servicio: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`.

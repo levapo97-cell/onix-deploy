@@ -1,0 +1,76 @@
+# OnixGuard — docker-compose de PRODUCCIÓN (vive en el VPS, en /opt/onixguard).
+# Usa imágenes publicadas en GHCR (tag :current que el CD actualiza), NO build contexts.
+# PostgreSQL es EXTERNO (en el host del VPS): entra por DATABASE_URL del .env.
+# Variables y secretos en /opt/onixguard/.env (NUNCA en git). Ver docs/RUNBOOK.md.
+name: onixguard
+
+services:
+  nats:
+    image: nats:2.10-alpine
+    command: ["-c", "/etc/nats/nats.conf"]
+    ports: ["4222:4222", "8222:8222"]
+    volumes:
+      - ./nats/nats.conf:/etc/nats/nats.conf:ro
+      - nats_data:/data
+    restart: unless-stopped
+
+  ingestor:
+    image: ghcr.io/levapo97-cell/onix-ingestor:current
+    environment: { PORT: "8081", NATS_URL: "nats://nats:4222" }
+    depends_on: [nats]
+    restart: unless-stopped
+
+  guard:
+    image: ghcr.io/levapo97-cell/onix-guard:current
+    environment: { PORT: "8083", NATS_URL: "nats://nats:4222" }
+    depends_on: [nats]
+    restart: unless-stopped
+
+  recorder:
+    image: ghcr.io/levapo97-cell/onix-recorder:current
+    environment:
+      PORT: "8082"
+      NATS_URL: "nats://nats:4222"
+      DATABASE_URL: "${DATABASE_URL}"
+    depends_on: [nats]
+    restart: unless-stopped
+
+  orchestrator:
+    image: ghcr.io/levapo97-cell/onix-orchestrator:current
+    environment:
+      PORT: "8085"
+      MCP_PORT: "8084"
+      NATS_URL: "nats://nats:4222"
+      DATABASE_URL: "${DATABASE_URL}"
+      REPORT_TIMEOUT_MIN: "15"
+    ports: ["8084:8084", "8085:8085"]
+    depends_on: [nats]
+    restart: unless-stopped
+
+  gateway:
+    image: ghcr.io/levapo97-cell/onix-gateway:current
+    environment:
+      PORT: "8080"
+      NATS_URL: "nats://nats:4222"
+      DATABASE_URL: "${DATABASE_URL}"
+      ORCHESTRATOR_URL: "http://orchestrator:8085"
+      UPLOAD_DIR: "/data/uploads"
+      JWT_SECRET: "${JWT_SECRET}"
+      PANEL_USER: "${PANEL_USER}"
+      PANEL_PASSWORD_HASH: "${PANEL_PASSWORD_HASH}"
+      CORS_ORIGIN: "${CORS_ORIGIN:-https://onix.devtoolsdk.com}"
+    volumes:
+      - uploads:/data/uploads
+    ports: ["8080:8080"]
+    depends_on: [nats]
+    restart: unless-stopped
+
+  frontend:
+    image: ghcr.io/levapo97-cell/onixguard-frontend:current
+    ports: ["3000:80"]
+    depends_on: [gateway]
+    restart: unless-stopped
+
+volumes:
+  nats_data:
+  uploads:
