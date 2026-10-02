@@ -109,6 +109,9 @@ services:
       NATS_URL: "nats://nats:4222"
       DATABASE_URL: "${DATABASE_URL:-}"
       ORCHESTRATOR_URL: "http://orchestrator:8085"
+      UPLOAD_DIR: "/data/uploads"
+    volumes:
+      - uploads:/data/uploads
     ports:
       - "8080:8080"
     depends_on:
@@ -141,3 +144,4 @@ services:
 
 volumes:
   nats_data:
+  uploads:
