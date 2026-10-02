@@ -2,6 +2,20 @@
 
 Guía operativa del despliegue en el VPS. Para desarrollo local ver el README de `onix-deploy`.
 
+## Instalación en local (para que otros lo dejen corriendo)
+- **Un comando (desde los repos clonados):** `cd onix-deploy && make local` → levanta todo (incluye Postgres efímero y `onix-agent`). Panel en http://localhost:3000 (jefe/onix).
+- **Instalador de cero (clona + levanta):**
+  ```bash
+  bash <(curl -fsSL https://raw.githubusercontent.com/levapo97-cell/onix-deploy/dev/scripts/install.sh)
+  ```
+  Requisitos: git, Docker (o colima) y Go (para el `onix-agent`). Clona los 11 repos (rama `dev`) y corre `make local`.
+  > Mejora futura (más liviana, sin compilar): publicar las imágenes en GHCR vía CD y que el instalador solo baje imágenes + `docker compose up` (sin clonar/buildear). Requiere haber corrido el CD al menos una vez.
+
+## Frontend en Vercel
+- El frontend (`OnixGuard/`) es una SPA Vite → deploy directo en Vercel (`vercel.json` incluido: framework vite, SPA rewrite a index.html).
+- En el proyecto de Vercel, define la env **`VITE_GATEWAY_URL`** con la URL pública del gateway (p. ej. `https://onix.devtoolsdk.com`). Es build-time: redeploy tras cambiarla.
+- El backend (gateway/orchestrator/NATS/Postgres) sigue en el VPS; Vercel solo sirve el frontend.
+
 ## Topología (producción)
 - **VPS** (tras nginx + Cloudflare, subdominio `onix.devtoolsdk.com`): NATS/JetStream, `onix-ingestor`, `onix-guard`, `onix-recorder`, `onix-orchestrator`, `onix-gateway`, frontend. PostgreSQL **externo al compose** (en el host del VPS).
 - **Tu PC**: `onix-hook` (telemetría) y `onix-agent` (proyectos/repos). Solo conexiones **salientes** a NATS (TLS + token).
