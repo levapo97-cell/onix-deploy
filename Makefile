@@ -6,7 +6,7 @@ COMPOSE := $(shell if docker compose version >/dev/null 2>&1; then echo "docker 
 # E2E local: compose base + override con Postgres efímero dentro de Docker.
 COMPOSE_E2E := $(COMPOSE) -f docker-compose.yml -f docker-compose.localdb.yml
 
-.PHONY: help dev up down logs ps build migrate migrate-down test-db codegen smoke e2e e2e-up e2e-migrate e2e-smoke e2e-down
+.PHONY: help dev up down logs ps build migrate migrate-down test-db codegen smoke e2e e2e-up e2e-migrate e2e-smoke e2e-down local local-down
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -73,3 +73,10 @@ e2e-smoke: ## Verifica que core y gateway responden /healthz
 
 e2e-down: ## Baja el stack E2E y borra el volumen de Postgres
 	$(COMPOSE_E2E) --profile migrate down -v
+
+# ─────────────── Local de un comando (para dejarlo corriendo en tu PC) ───────────────
+local: ## Levanta TODO en local (Docker + Postgres + frontend + onix-agent) y da la URL
+	bash scripts/local.sh
+
+local-down: ## Baja el stack local (usa 'make local-down ARGS=-v' para borrar datos)
+	bash scripts/local-down.sh $(ARGS)

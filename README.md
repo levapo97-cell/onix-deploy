@@ -28,7 +28,19 @@ Onix/
 ├── onix-contracts/   onix-db/   onix-ingestor/   OnixGuard/   …
 ```
 
-## Desarrollo local (Fase 0)
+## 🚀 Correr OnixGuard en local (UN comando)
+
+```bash
+make local        # arranca Docker + Postgres + todos los servicios + frontend + onix-agent
+# → Panel en http://localhost:3000   (usuario: jefe · password: onix)
+make local-down          # bajar (conserva datos)
+make local-down ARGS=-v  # bajar y borrar datos
+```
+`make local` es autocontenido (incluye su propio PostgreSQL efímero y compila/arranca el `onix-agent` si tienes Go). Es la forma recomendada de dejar OnixGuard corriendo en tu PC.
+
+> Para despliegue: frontend en Vercel + backend en el VPS (CD) — ver `docs/RUNBOOK.md`.
+
+## Desarrollo local por piezas (Fase 0)
 
 ```bash
 cp .env.example .env         # rellena DATABASE_URL (Postgres del VPS/host)
